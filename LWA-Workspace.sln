@@ -1,0 +1,30 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LWA.Agent", "LWA.Agent\LWA.Agent.csproj", "{FD4C777B-6539-1553-69DD-94A274059693}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MiniPortLegacy", "MiniPortLegacy\MiniPortLegacy.csproj", "{7BB70F65-9F0E-805B-A80D-B9F2F7226358}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FD4C777B-6539-1553-69DD-94A274059693}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FD4C777B-6539-1553-69DD-94A274059693}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FD4C777B-6539-1553-69DD-94A274059693}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FD4C777B-6539-1553-69DD-94A274059693}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7BB70F65-9F0E-805B-A80D-B9F2F7226358}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7BB70F65-9F0E-805B-A80D-B9F2F7226358}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7BB70F65-9F0E-805B-A80D-B9F2F7226358}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7BB70F65-9F0E-805B-A80D-B9F2F7226358}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {90229480-B9FD-4712-9CA0-5EE1581FDFFC}
+	EndGlobalSection
+EndGlobal

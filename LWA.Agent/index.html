@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LWA リモート操作パネル</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background-color: #f0f2f5; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); max-width: 400px; margin: 0 auto; }
+        h2 { text-align: center; color: #333; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background-color: #007bff; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        #status { margin-top: 15px; padding: 10px; text-align: center; border-radius: 4px; display: none; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>🚢 コンテナ入庫登録</h2>
+    
+    <div class="form-group">
+        <label>コンテナNo</label>
+        <input type="text" id="cNo" placeholder="例: MOLU-1234567" value="TEST-CONTAINER-001">
+    </div>
+
+    <div class="form-group">
+        <label>サイズ/タイプ</label>
+        <select id="cType">
+            <option value="20ft Dry">20ft Dry</option>
+            <option value="40ft Dry">40ft Dry</option>
+            <option value="40ft Reefer">40ft Reefer</option>
+            <option value="40ft OpenTop">40ft OpenTop</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label>
+            <input type="checkbox" id="cDamaged" style="width:auto;"> ダメージあり
+        </label>
+    </div>
+
+    <button onclick="sendOrder()">🤖 ロボット実行</button>
+    <div id="status"></div>
+</div>
+
+<script>
+    async function sendOrder() {
+        const statusDiv = document.getElementById('status');
+        statusDiv.style.display = 'block';
+        statusDiv.className = '';
+        statusDiv.innerText = '送信中...';
+
+        const data = {
+            ContainerNo: document.getElementById('cNo').value,
+            Type: document.getElementById('cType').value,
+            IsDamaged: document.getElementById('cDamaged').checked
+        };
+
+        try {
+            // ローカルのLWA Agentサーバーに命令を投げる
+            const response = await fetch('http://localhost:5000/run', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            const result = await response.json();
+            
+            if (response.ok) {
+                statusDiv.className = 'success';
+                statusDiv.innerText = '✅ 成功: ' + result.detail;
+            } else {
+                throw new Error(result.detail || 'エラー発生');
+            }
+        } catch (error) {
+            statusDiv.className = 'error';
+            statusDiv.innerText = '❌ 失敗: ' + error.message;
+        }
+    }
+</script>
+
+</body>
+</html>

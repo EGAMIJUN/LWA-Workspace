@@ -1,0 +1,24 @@
+{
+  "JobId": "DEMO-001",
+  "TargetWindowName": "MiniPortLegacy",
+  "Actions": [
+    {
+      "Type": "Input",
+      "TargetId": "txtContainerNo",
+      "Value": "NYK-2025-ABCD",
+      "Description": "コンテナ番号を入力"
+    },
+    {
+      "Type": "Input",
+      "TargetId": "txtQty",
+      "Value": "50",
+      "Description": "数量を入力"
+    },
+    {
+      "Type": "Click",
+      "TargetId": "btnRegister",
+      "Value": "",
+      "Description": "登録ボタンをクリック"
+    }
+  ]
+}
