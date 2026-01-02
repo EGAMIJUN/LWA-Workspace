@@ -72,6 +72,11 @@ namespace MiniPortLegacy
 
             tabControl.Controls.Add(tabInput);
             tabControl.Controls.Add(tabList);
+            
+            // --- テスト用ダミーデータ ---
+            gridInventory.Rows.Add("MOLU-8888888", "40ft Dry", "なし", "09:00");
+            gridInventory.Rows.Add("NYK-1234567", "20ft Dry", "あり", "10:30");
+            gridInventory.Rows.Add("ONE-9999999", "40ft Reefer", "なし", "11:15");
             this.Controls.Add(tabControl);
         }
 
