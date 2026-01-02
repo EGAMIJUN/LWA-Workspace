@@ -15,6 +15,8 @@ using TextBox = FlaUI.Core.AutomationElements.TextBox;
 using Button = FlaUI.Core.AutomationElements.Button;
 using ComboBox = FlaUI.Core.AutomationElements.ComboBox;
 using CheckBox = FlaUI.Core.AutomationElements.CheckBox;
+using DataGrid = FlaUI.Core.AutomationElements.DataGrid;
+using System.Collections.Generic;
 
 // ==========================================
 // 1. Webサーバー設定
@@ -46,6 +48,22 @@ app.MapPost("/run", (JobRequest req) =>
     {
         Console.WriteLine($"[FATAL] {ex.Message}");
         Console.WriteLine(ex.StackTrace); // 詳細な場所を出す
+        return Results.Problem(ex.Message);
+    }
+});
+
+app.MapGet("/inventory", () =>
+{
+    Console.WriteLine("[Inventory] 在庫一覧取得リクエスト");
+    try
+    {
+        var items = GetInventory();
+        return Results.Ok(items);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[FATAL] {ex.Message}");
+        Console.WriteLine(ex.StackTrace);
         return Results.Problem(ex.Message);
     }
 });
@@ -130,6 +148,67 @@ static string RunRobot(JobRequest req)
     return $"登録完了: {req.ContainerNo}";
 }
 
+static List<InventoryItem> GetInventory()
+{
+    Console.WriteLine("DEBUG: 1. プロセス検索開始");
+    var process = Process.GetProcessesByName("MiniPortLegacy").FirstOrDefault();
+    if (process == null) throw new Exception("MiniPortLegacyが起動していません。");
+
+    Console.WriteLine("DEBUG: 2. ウィンドウ接続");
+    using var automation = new UIA3Automation();
+    var app = FlaUI.Core.Application.Attach(process);
+    var window = app.GetMainWindow(automation);
+    if (window == null) throw new Exception("画面が見つかりません。");
+    window.Focus();
+
+    // タブ切り替え（在庫一覧タブ）
+    Console.WriteLine("DEBUG: 3. 在庫一覧タブに切り替え");
+    var tab = RetryFind(window, "TabList");
+    if (tab != null)
+    {
+        if (tab.Patterns.SelectionItem.IsSupported)
+            tab.Patterns.SelectionItem.Pattern.Select();
+        else
+            tab.Click();
+        Thread.Sleep(500); // 画面切り替え待ち
+    }
+    else
+    {
+        throw new Exception("在庫一覧タブが見つかりません");
+    }
+
+    // グリッドを探す
+    Console.WriteLine("DEBUG: 4. グリッド検索");
+    var elGrid = RetryFind(window, "gridInventory");
+    if (elGrid == null) throw new Exception("グリッドが見つかりません");
+
+    var grid = new DataGrid(elGrid.FrameworkAutomationElement);
+    var items = new List<InventoryItem>();
+
+    // グリッドの全行をループ
+    Console.WriteLine("DEBUG: 5. グリッド行の読み取り");
+    var rows = grid.Rows;
+    Console.WriteLine($"  -> 行数: {rows.Length}");
+
+    foreach (var row in rows)
+    {
+        var cells = row.Cells;
+        if (cells.Length >= 4)
+        {
+            string no = cells[0].Value ?? "";
+            string type = cells[1].Value ?? "";
+            string damaged = cells[2].Value ?? "";
+            string time = cells[3].Value ?? "";
+            
+            items.Add(new InventoryItem(no, type, damaged, time));
+            Console.WriteLine($"  -> 読み取り: No={no}, Type={type}, Damaged={damaged}, Time={time}");
+        }
+    }
+
+    Console.WriteLine($"DEBUG: 6. 完了（{items.Count}件）");
+    return items;
+}
+
 // ==========================================
 // 3. ヘルパーメソッド & データ型
 // ==========================================
@@ -146,3 +225,4 @@ static AutomationElement? RetryFind(AutomationElement root, string automationId,
 }
 
 public record JobRequest(string ContainerNo, string Type, bool IsDamaged);
+public record InventoryItem(string No, string Type, string Damaged, string Time);
