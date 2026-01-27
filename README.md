@@ -133,5 +133,3 @@ Contributions are welcome! Please read the [contribution guidelines](https://www
 
 ---
 
-```
-
