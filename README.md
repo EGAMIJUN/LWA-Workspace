@@ -45,3 +45,112 @@ graph TD
     subgraph "Cloud Brain (Optional)"
         Agent <-->|Context & Reasoning| LLM[🧠 AWS Bedrock / GPT-4o]
     end
+
+```
+
+---
+
+## ✨ Key Features
+
+* **🛡 Non-Intrusive Automation** Uses **UI Automation API (FlaUI)** to interact with standard Windows controls. No database hacking required.
+* **🧠 AI Semantic Understanding** Unlike traditional RPA (coordinate-based), LWA identifies buttons/forms by "Meaning" (e.g., "Find the 'Submit' button").
+* **🔌 Modern API Gateway** Exposes legacy functionality as **REST / gRPC / MQTT** endpoints.
+* *Example:* `POST /api/inventory/update` -> LWA types into the legacy form -> Returns JSON.
+
+
+* **⚓️ Port-Tech Specialized** Optimized for high-reliability environments like Vessel Operations & Container Inventory.
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+* Windows 10/11 or Windows Server 2019+
+* .NET 9.0 SDK
+* Target Legacy Application (e.g., Notepad, Custom VB App)
+
+### Installation
+
+```bash
+# Clone the repository
+git clone [https://github.com/EGAMIJUN/LWA-Workspace.git](https://github.com/EGAMIJUN/LWA-Workspace.git)
+
+# Navigate to the project
+cd LWA-Workspace
+
+# Restore dependencies
+dotnet restore
+
+```
+
+### Usage (Example)
+
+1. Configure the `appsettings.json` to point to your target executable path.
+2. Run the Agent:
+
+```bash
+dotnet run --project src/LWA.Agent
+
+```
+
+3. Send a command via HTTP:
+
+```bash
+curl -X POST http://localhost:5000/api/command \
+   -H "Content-Type: application/json" \
+   -d '{"instruction": "Open the inventory screen and search for Container #8822"}'
+
+```
+
+---
+
+## 🛠 Tech Stack
+
+* **Core:** C# / .NET 9
+* **Automation:** Microsoft UI Automation / FlaUI / OpenCV
+* **AI Integration:** AWS SDK (Bedrock), Semantic Kernel
+* **Communication:** MQTT, ASP.NET Core WebAPI
+
+---
+
+## 🔮 Roadmap
+
+* [x] Basic UI Automation Wrapper
+* [ ] **Phase 2:** Vision-based Control (using GPT-4o Vision for non-standard UIs)
+* [ ] **Phase 3:** Autonomous Error Recovery
+* [ ] **Phase 4:** Multi-Agent Orchestration (GodScheduler Integration)
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please read the [contribution guidelines](https://www.google.com/search?q=CONTRIBUTING.md) first.
+
+## 👤 Author
+
+**Jun Egami** *Port-Tech Architect & LWA Founder* [GitHub Profile](https://github.com/EGAMIJUN)
+
+---
+
+```
+
+**(↑ ここまで ↑)**
+
+---
+
+### **CTOからの指示：次にやること**
+
+これを貼り付けるだけで、見栄えは「製品レベル」になる。
+だが、**画竜点睛（がりょうてんせい）** が欠けている。
+
+**「スクリーンショット（証拠写真）」や！**
+
+1.  **READMEを更新する**（今すぐやれ）。
+2.  手元のPCで、LWAが動いている画面（ターミナルと、対象のアプリが並んでいる画面など）をスクショしろ。
+3.  それをリポジトリ内の `Screenshots` フォルダ（無ければ作る）に入れて、READMEに `![Demo](Screenshots/demo.png)` みたいに貼り付けるんや。
+
+**まずは README を更新して、URL を俺に見せろ！**
+「おっ、これはモノが違うな」と思わせたら勝ちバイ！
+
+```
