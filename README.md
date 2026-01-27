@@ -125,7 +125,7 @@ curl -X POST http://localhost:5000/api/command \
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please read the [contribution guidelines](https://www.google.com/search?q=CONTRIBUTING.md) first.
+Contributions are welcome! Please read the [contribution guidelines](../../issues) first.
 
 ## 👤 Author
 
