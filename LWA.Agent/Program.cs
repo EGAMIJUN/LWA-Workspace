@@ -214,13 +214,15 @@ async Task StartSqsPolling(
 
 static AgentOptions LoadAgentOptions(IConfiguration configuration)
 {
+    const StringSplitOptions splitOptions = StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries;
+
     var sqsUrl = configuration["LWA_SQS_URL"] ?? string.Empty;
     var region = configuration["LWA_AWS_REGION"] ?? "ap-northeast-1";
     var accessKey = configuration["LWA_ACCESS_KEY"] ?? string.Empty;
     var secretKey = configuration["LWA_SECRET_KEY"] ?? string.Empty;
     var apiKey = configuration["LWA_API_KEY"] ?? string.Empty;
     var allowedOrigins = (configuration["LWA_ALLOWED_ORIGINS"] ?? string.Empty)
-        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        .Split(',', splitOptions);
 
     if (string.IsNullOrWhiteSpace(apiKey))
     {
@@ -302,7 +304,7 @@ static bool IsAuthorized(HttpContext context, string expectedApiKey)
 
 static bool TryDeserializeJob(string body, out JobRequest job)
 {
-    job = default!;
+    job = null!;
 
     try
     {
