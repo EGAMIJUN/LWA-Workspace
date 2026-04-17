@@ -45,18 +45,13 @@ app.UseCors("AgentCors");
 
 var logger = app.Logger;
 var robotSemaphore = new SemaphoreSlim(1, 1);
-var allowedTypes = new HashSet<string>(StringComparer.Ordinal)
+var allowedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 {
     "20ft Dry",
     "40ft Dry",
     "40ft Reefer",
     "40ft OpenTop"
 };
-
-if (agentOptions.AllowedOrigins.Length == 0)
-{
-    logger.LogWarning("No CORS origins configured. Set LWA_ALLOWED_ORIGINS for browser-based clients.");
-}
 
 var pollingCts = new CancellationTokenSource();
 app.Lifetime.ApplicationStopping.Register(() => pollingCts.Cancel());
@@ -235,6 +230,20 @@ static AgentOptions LoadAgentOptions(IConfiguration configuration)
     if (string.IsNullOrWhiteSpace(sqsUrl))
     {
         throw new InvalidOperationException("LWA_SQS_URL must be configured.");
+    }
+
+    if (allowedOrigins.Length == 0)
+    {
+        throw new InvalidOperationException("LWA_ALLOWED_ORIGINS must be configured.");
+    }
+
+    foreach (var origin in allowedOrigins)
+    {
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var parsed) ||
+            (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new InvalidOperationException($"Invalid CORS origin: {origin}");
+        }
     }
 
     var hasAccessKey = !string.IsNullOrWhiteSpace(accessKey);
