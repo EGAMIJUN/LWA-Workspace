@@ -70,6 +70,16 @@ graph TD
 * .NET 9.0 SDK
 * Target Legacy Application (e.g., Notepad, Custom VB App)
 
+### Production Configuration (Required)
+
+Set the following environment variables before starting `LWA.Agent`:
+
+* `LWA_API_KEY` (required): API key expected in `X-API-Key` request header
+* `LWA_SQS_URL` (required): SQS queue URL for command polling
+* `LWA_AWS_REGION` (optional): AWS region (defaults to `ap-northeast-1`)
+* `LWA_ACCESS_KEY` + `LWA_SECRET_KEY` (optional pair): static credentials if IAM role is not used
+* `LWA_ALLOWED_ORIGINS` (required): comma-separated CORS allowlist (example: `https://ops.example.com,https://admin.example.com`)
+
 ### Installation
 
 ```bash
@@ -132,4 +142,3 @@ Contributions are welcome! Please read the [contribution guidelines](../../issue
 **Jun Egami** *Port-Tech Architect & LWA Founder* [GitHub Profile](https://github.com/EGAMIJUN)
 
 ---
-

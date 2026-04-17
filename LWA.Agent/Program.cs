@@ -1,160 +1,355 @@
-﻿using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using System.Diagnostics;
-using System.Linq;
-using System;
-using System.Threading;
-using System.Threading.Tasks; // 追加: 非同期処理用
-using System.Collections.Generic;
-using System.Text.Json; // 追加: JSON処理用
-using FlaUI.UIA3;
-using FlaUI.Core;
-using FlaUI.Core.AutomationElements;
-// 追加: AWSライブラリ
-using Amazon;
+﻿using Amazon;
 using Amazon.SQS;
 using Amazon.SQS.Model;
-
-// 競合回避
-using TextBox = FlaUI.Core.AutomationElements.TextBox;
+using FlaUI.Core;
+using FlaUI.Core.AutomationElements;
+using FlaUI.UIA3;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using Button = FlaUI.Core.AutomationElements.Button;
-using ComboBox = FlaUI.Core.AutomationElements.ComboBox;
 using CheckBox = FlaUI.Core.AutomationElements.CheckBox;
+using TextBox = FlaUI.Core.AutomationElements.TextBox;
 
-// ==========================================
-// 0. AWS設定 (ここに自分の鍵を入れる！)
-// ==========================================
-// ★重要: GitHubに上げる時はここを消すか、環境変数を使うこと！
-// 環境変数から読み込む（無ければ空文字）
-static readonly string AwsAccessKey = Environment.GetEnvironmentVariable("LWA_ACCESS_KEY") ?? "";
-static readonly string AwsSecretKey = Environment.GetEnvironmentVariable("LWA_SECRET_KEY") ?? "";
-// const ではなく static readonly にすること！
-const string SqsUrl = "https://sqs.ap-northeast-1.amazonaws.com/038751768591/LwaCommandQueue"; // さっきのURL
-const string Region = "ap-northeast-1"; // 東京リージョン
-
-// ==========================================
-// 1. Webサーバー設定
-// ==========================================
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 
-builder.Services.AddCors(options =>
+var agentOptions = LoadAgentOptions(builder.Configuration);
+
+builder.Services.AddCors(corsOptions =>
 {
-    options.AddPolicy("AllowAll",
-        policy => policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+    corsOptions.AddPolicy("AgentCors", policy =>
+    {
+        if (agentOptions.AllowedOrigins.Length > 0)
+        {
+            policy.WithOrigins(agentOptions.AllowedOrigins).AllowAnyMethod().AllowAnyHeader();
+        }
+    });
 });
 
 var app = builder.Build();
-app.UseCors("AllowAll");
+app.UseCors("AgentCors");
 
-app.MapGet("/", () => "LWA Agent Phase 3 (AWS Connected) 🚀");
-
-// 手動実行用API
-app.MapPost("/run", (JobRequest req) => 
+var logger = app.Logger;
+var robotSemaphore = new SemaphoreSlim(1, 1);
+var allowedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 {
-    Console.WriteLine($"[Web] No:{req.ContainerNo}, Type:{req.Type}");
-    try 
-    {
-        string result = RunRobot(req);
-        return Results.Ok(new { message = "Success", detail = result });
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(ex.Message);
-    }
-});
+    "20ft Dry",
+    "40ft Dry",
+    "40ft Reefer",
+    "40ft OpenTop"
+};
 
-// 在庫確認API
-app.MapGet("/inventory", () =>
+var pollingCts = new CancellationTokenSource();
+app.Lifetime.ApplicationStopping.Register(() => pollingCts.Cancel());
+_ = Task.Run(() => StartSqsPolling(agentOptions, robotSemaphore, logger, allowedTypes, pollingCts.Token));
+
+app.MapGet("/", () => Results.Ok(new { service = "LWA Agent", status = "running" }));
+app.MapGet("/health", () => Results.Ok(new { status = "ok", sqsQueue = agentOptions.SqsUrl }));
+
+app.MapPost("/run", async (HttpContext context, JobRequest req, CancellationToken cancellationToken) =>
 {
-    Console.WriteLine("[Web] 在庫一覧取得リクエスト");
+    if (!IsAuthorized(context, agentOptions.ApiKey))
+    {
+        return Results.Unauthorized();
+    }
+
+    var validationError = ValidateJobRequest(req, allowedTypes);
+    if (validationError is not null)
+    {
+        return Results.BadRequest(new { message = validationError });
+    }
+
     try
     {
-        var items = GetInventory();
-        return Results.Ok(items);
+        await robotSemaphore.WaitAsync(cancellationToken);
+        try
+        {
+            var result = RunRobot(req);
+            return Results.Ok(new { message = "Success", detail = result });
+        }
+        finally
+        {
+            robotSemaphore.Release();
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        return Results.Problem("Request was cancelled.");
     }
     catch (Exception ex)
     {
-        return Results.Problem(ex.Message);
+        logger.LogError(ex, "Robot execution failed.");
+        return Results.Problem("Robot execution failed.");
     }
 });
 
-// ★★★ ここが新機能: SQSポーリング開始 ★★★
-// Webサーバーとは別の「裏スレッド」でSQS監視をスタートさせる
-var sqsTask = Task.Run(() => StartSqsPolling());
+app.MapGet("/inventory", async (HttpContext context, CancellationToken cancellationToken) =>
+{
+    if (!IsAuthorized(context, agentOptions.ApiKey))
+    {
+        return Results.Unauthorized();
+    }
 
-Console.WriteLine("=== LWA Agent Server Started (http://localhost:5000) ===");
-Console.WriteLine($"=== SQS Polling Started: {SqsUrl} ===");
+    try
+    {
+        await robotSemaphore.WaitAsync(cancellationToken);
+        try
+        {
+            var items = GetInventory();
+            return Results.Ok(items);
+        }
+        finally
+        {
+            robotSemaphore.Release();
+        }
+    }
+    catch (OperationCanceledException)
+    {
+        return Results.Problem("Request was cancelled.");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Inventory read failed.");
+        return Results.Problem("Inventory read failed.");
+    }
+});
+
+logger.LogInformation("LWA Agent started at http://localhost:5000");
+logger.LogInformation("SQS polling started: {QueueUrl}", agentOptions.SqsUrl);
 
 app.Run("http://localhost:5000");
 
-// ==========================================
-// 2. SQS監視ロジック (Worker)
-// ==========================================
-static async Task StartSqsPolling()
+async Task StartSqsPolling(
+    AgentOptions options,
+    SemaphoreSlim semaphore,
+    ILogger pollingLogger,
+    HashSet<string> validTypes,
+    CancellationToken cancellationToken)
 {
-    // ここで落ちるならRegionがおかしい。const string Regionを確認せよ。
-    var sqsConfig = new AmazonSQSConfig { RegionEndpoint = RegionEndpoint.GetBySystemName(Region) };
-    var sqsClient = new AmazonSQSClient(AwsAccessKey, AwsSecretKey, sqsConfig);
+    using var sqsClient = CreateSqsClient(options);
+    pollingLogger.LogInformation("SQS client initialized. Waiting for commands...");
 
-    Console.WriteLine("[AWS] 接続準備OK。命令を待機中...");
-
-    while (true)
+    while (!cancellationToken.IsCancellationRequested)
     {
         try
         {
             var request = new ReceiveMessageRequest
             {
-                QueueUrl = SqsUrl,
+                QueueUrl = options.SqsUrl,
                 MaxNumberOfMessages = 1,
-                WaitTimeSeconds = 20
+                WaitTimeSeconds = 20,
+                VisibilityTimeout = 60
             };
 
-            // ここで落ちるなら sqsClient が null (ありえない)
-            var response = await sqsClient.ReceiveMessageAsync(request);
-
-            // ★★★ 修正箇所: nullチェックを追加 ★★★
-            // response自体がnull、またはMessagesがnullの場合は無視する
-            if (response != null && response.Messages != null && response.Messages.Count > 0)
+            var response = await sqsClient.ReceiveMessageAsync(request, cancellationToken);
+            if (response.Messages.Count == 0)
             {
-                var msg = response.Messages[0];
-                Console.WriteLine($"\n[AWS] 受信: {msg.Body}");
-
-                try 
-                {
-                    var job = JsonSerializer.Deserialize<JobRequest>(msg.Body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                    
-                    if (job != null)
-                    {
-                        Console.WriteLine($"[AWS] ロボット起動: {job.ContainerNo}");
-                        
-                        // メインスレッドのUI操作が必要な場合があるが、FlaUIは比較的寛容
-                        string result = RunRobot(job); 
-                        
-                        Console.WriteLine($"[AWS] 実行完了: {result}");
-
-                        await sqsClient.DeleteMessageAsync(SqsUrl, msg.ReceiptHandle);
-                        Console.WriteLine("[AWS] キューから削除完了");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[AWS Error] 処理失敗: {ex.Message}");
-                }
+                continue;
             }
+
+            var message = response.Messages[0];
+            pollingLogger.LogInformation("SQS message received: {MessageId}", message.MessageId);
+
+            if (!TryDeserializeJob(message.Body, out var job))
+            {
+                pollingLogger.LogWarning("Message deserialization failed. MessageId: {MessageId}", message.MessageId);
+                await sqsClient.DeleteMessageAsync(options.SqsUrl, message.ReceiptHandle, cancellationToken);
+                continue;
+            }
+
+            var validationError = ValidateJobRequest(job, validTypes);
+            if (validationError is not null)
+            {
+                pollingLogger.LogWarning("Invalid job request from queue: {ValidationError}", validationError);
+                await sqsClient.DeleteMessageAsync(options.SqsUrl, message.ReceiptHandle, cancellationToken);
+                continue;
+            }
+
+            await semaphore.WaitAsync(cancellationToken);
+            try
+            {
+                var result = RunRobot(job);
+                pollingLogger.LogInformation("Robot execution succeeded: {Result}", result);
+                await sqsClient.DeleteMessageAsync(options.SqsUrl, message.ReceiptHandle, cancellationToken);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            break;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[SQS Error] 通信エラー: {ex.Message}");
-            Console.WriteLine($"[場所] {ex.StackTrace}");
-            await Task.Delay(5000); 
+            pollingLogger.LogError(ex, "SQS polling error.");
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
         }
     }
+
+    pollingLogger.LogInformation("SQS polling stopped.");
+}
+
+static AgentOptions LoadAgentOptions(IConfiguration configuration)
+{
+    const StringSplitOptions splitOptions = StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries;
+
+    var sqsUrl = configuration["LWA_SQS_URL"] ?? string.Empty;
+    var region = configuration["LWA_AWS_REGION"] ?? "ap-northeast-1";
+    var accessKey = configuration["LWA_ACCESS_KEY"] ?? string.Empty;
+    var secretKey = configuration["LWA_SECRET_KEY"] ?? string.Empty;
+    var apiKey = configuration["LWA_API_KEY"] ?? string.Empty;
+    var allowedOrigins = (configuration["LWA_ALLOWED_ORIGINS"] ?? string.Empty)
+        .Split(',', splitOptions);
+
+    if (string.IsNullOrWhiteSpace(apiKey))
+    {
+        throw new InvalidOperationException("LWA_API_KEY must be configured.");
+    }
+
+    if (string.IsNullOrWhiteSpace(sqsUrl))
+    {
+        throw new InvalidOperationException("LWA_SQS_URL must be configured.");
+    }
+
+    if (allowedOrigins.Length == 0)
+    {
+        throw new InvalidOperationException("LWA_ALLOWED_ORIGINS must be configured.");
+    }
+
+    foreach (var origin in allowedOrigins)
+    {
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var parsed) ||
+            (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new InvalidOperationException($"Invalid CORS origin: {origin}");
+        }
+    }
+
+    var hasAccessKey = !string.IsNullOrWhiteSpace(accessKey);
+    var hasSecretKey = !string.IsNullOrWhiteSpace(secretKey);
+    if (hasAccessKey != hasSecretKey)
+    {
+        throw new InvalidOperationException("LWA_ACCESS_KEY and LWA_SECRET_KEY must be set together.");
+    }
+
+    return new AgentOptions(
+        sqsUrl,
+        region,
+        accessKey,
+        secretKey,
+        apiKey,
+        allowedOrigins);
+}
+
+static AmazonSQSClient CreateSqsClient(AgentOptions options)
+{
+    var sqsConfig = new AmazonSQSConfig
+    {
+        RegionEndpoint = RegionEndpoint.GetBySystemName(options.Region)
+    };
+
+    if (!string.IsNullOrWhiteSpace(options.AccessKey))
+    {
+        return new AmazonSQSClient(options.AccessKey, options.SecretKey, sqsConfig);
+    }
+
+    return new AmazonSQSClient(sqsConfig);
+}
+
+static bool IsAuthorized(HttpContext context, string expectedApiKey)
+{
+    if (!context.Request.Headers.TryGetValue("X-API-Key", out var providedHeaderValue))
+    {
+        return false;
+    }
+
+    var providedApiKey = providedHeaderValue.ToString();
+    if (string.IsNullOrWhiteSpace(providedApiKey))
+    {
+        return false;
+    }
+
+    var expectedBytes = Encoding.UTF8.GetBytes(expectedApiKey);
+    var providedBytes = Encoding.UTF8.GetBytes(providedApiKey);
+    if (expectedBytes.Length != providedBytes.Length)
+    {
+        return false;
+    }
+
+    return CryptographicOperations.FixedTimeEquals(expectedBytes, providedBytes);
+}
+
+static bool TryDeserializeJob(string body, out JobRequest job)
+{
+    job = null!;
+
+    try
+    {
+        var parsed = JsonSerializer.Deserialize<JobRequest>(body, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+
+        if (parsed is null)
+        {
+            return false;
+        }
+
+        job = parsed;
+        return true;
+    }
+    catch
+    {
+        return false;
+    }
+}
+
+static string? ValidateJobRequest(JobRequest req, HashSet<string> allowedTypes)
+{
+    if (string.IsNullOrWhiteSpace(req.ContainerNo))
+    {
+        return "ContainerNo is required.";
+    }
+
+    if (req.ContainerNo.Length > 20)
+    {
+        return "ContainerNo must be 20 characters or less.";
+    }
+
+    if (!Regex.IsMatch(req.ContainerNo, "^[A-Za-z0-9-]+$"))
+    {
+        return "ContainerNo can only contain letters, numbers, and hyphens.";
+    }
+
+    if (string.IsNullOrWhiteSpace(req.Type) || !allowedTypes.Contains(req.Type))
+    {
+        return "Type is invalid.";
+    }
+
+    return null;
 }
 // ==========================================
 // 3. ロボット制御ロジック (既存流用)
@@ -319,3 +514,10 @@ static AutomationElement? RetryFind(AutomationElement root, string automationId,
 
 public record JobRequest(string ContainerNo, string Type, bool IsDamaged);
 public record InventoryItem(string No, string Type, string Damaged, string Time);
+file sealed record AgentOptions(
+    string SqsUrl,
+    string Region,
+    string AccessKey,
+    string SecretKey,
+    string ApiKey,
+    string[] AllowedOrigins);
