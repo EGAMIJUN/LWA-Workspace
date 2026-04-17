@@ -172,6 +172,7 @@ async Task StartSqsPolling(
             if (!TryDeserializeJob(message.Body, out var job))
             {
                 pollingLogger.LogWarning("Message deserialization failed. MessageId: {MessageId}", message.MessageId);
+                await sqsClient.DeleteMessageAsync(options.SqsUrl, message.ReceiptHandle, cancellationToken);
                 continue;
             }
 
@@ -179,6 +180,7 @@ async Task StartSqsPolling(
             if (validationError is not null)
             {
                 pollingLogger.LogWarning("Invalid job request from queue: {ValidationError}", validationError);
+                await sqsClient.DeleteMessageAsync(options.SqsUrl, message.ReceiptHandle, cancellationToken);
                 continue;
             }
 
@@ -217,8 +219,7 @@ async Task StartSqsPolling(
 
 static AgentOptions LoadAgentOptions(IConfiguration configuration)
 {
-    var sqsUrl = configuration["LWA_SQS_URL"] ??
-                 "https://sqs.ap-northeast-1.amazonaws.com/038751768591/LwaCommandQueue";
+    var sqsUrl = configuration["LWA_SQS_URL"] ?? string.Empty;
     var region = configuration["LWA_AWS_REGION"] ?? "ap-northeast-1";
     var accessKey = configuration["LWA_ACCESS_KEY"] ?? string.Empty;
     var secretKey = configuration["LWA_SECRET_KEY"] ?? string.Empty;
@@ -229,6 +230,11 @@ static AgentOptions LoadAgentOptions(IConfiguration configuration)
     if (string.IsNullOrWhiteSpace(apiKey))
     {
         throw new InvalidOperationException("LWA_API_KEY must be configured.");
+    }
+
+    if (string.IsNullOrWhiteSpace(sqsUrl))
+    {
+        throw new InvalidOperationException("LWA_SQS_URL must be configured.");
     }
 
     var hasAccessKey = !string.IsNullOrWhiteSpace(accessKey);

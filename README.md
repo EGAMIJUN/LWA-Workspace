@@ -75,7 +75,7 @@ graph TD
 Set the following environment variables before starting `LWA.Agent`:
 
 * `LWA_API_KEY` (required): API key expected in `X-API-Key` request header
-* `LWA_SQS_URL` (recommended): SQS queue URL for command polling
+* `LWA_SQS_URL` (required): SQS queue URL for command polling
 * `LWA_AWS_REGION` (recommended): AWS region (example: `ap-northeast-1`)
 * `LWA_ACCESS_KEY` + `LWA_SECRET_KEY` (optional pair): static credentials if IAM role is not used
 * `LWA_ALLOWED_ORIGINS` (recommended): comma-separated CORS allowlist (example: `https://ops.example.com,https://admin.example.com`)
